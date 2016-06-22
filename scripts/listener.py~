@@ -1,0 +1,509 @@
+#!/usr/bin/env python
+# coding=utf-8
+
+# Software License Agreement (BSD License)
+#
+# Copyright (c) 2008, Willow Garage, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above
+#    copyright notice, this list of conditions and the following
+#    disclaimer in the documentation and/or other materials provided
+#    with the distribution.
+#  * Neither the name of Willow Garage, Inc. nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+# FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+# COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+# ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+# Revision $Id$
+
+## Simple talker demo that listens to std_msgs/Strings published 
+## to the 'chatter' topic
+
+import rospy
+
+import time  #librería para la pausa
+#from std_msgs.msg import String
+from std_msgs.msg import Int32
+
+
+codeL = [0,0,0]		#codeR guarda el código recibido por el receptor izquierdo (visto desde el robot). 
+codeLC = [0,0,0]	#codeC guarda el código recibido por el receptor izquierdo central.
+codeRC = [0,0,0]	#codeL guarda el código recibido por el receptor derecho central.
+codeR = [0,0,0]		#codeL guarda el código recibido por el receptor derecho.
+
+codigo = 0b1000000000000    #0
+code = 0b1000000000000		#0
+
+distanciaC=1
+distanciaR=1
+distanciaL=1
+volt=0
+tension=14	#Variable para guardar el valor de la tensión antes de la conexión a la base y realizar la comparación
+#recargar = 1    #copiada más abajo #Variable que indica si el robot necesita recarga (=1) o si no la necesita (=0)
+
+tiempo_recarga = 0
+
+
+#dato=0  #prueba de la llamada a la función callback
+
+
+giro=0		#=0 recto, =1 derecha, =2 izquierda
+encoder_inicio = 0  	
+
+def callbackC(data):
+    global distanciaC
+    #rospy.loginfo("**sensorRFC: %s", data.data)	
+    distanciaC=data.data
+	
+def callbackR(data):
+    global distanciaR
+    #rospy.loginfo("**sensorRFR: %s", data.data)	
+    distanciaR=data.data
+
+def callbackL(data):
+    global distanciaL
+    #rospy.loginfo("**sensorRFL: %s", data.data)	
+    distanciaL=data.data
+
+def callbackEnc1(data):
+    #rospy.loginfo(rospy.get_caller_id() + " I heard %s", data.data)
+    global encoder1
+    encoder1 = data.data
+    rospy.loginfo("** Encoder1 %s", data.data)
+
+def callbackEnc2(data):
+    #rospy.loginfo(rospy.get_caller_id() + " I heard %s", data.data)
+    global encoder2
+    encoder2 = data.data
+    rospy.loginfo("** Encoder2 %s", data.data)
+
+def callbackVolt(data):
+    #rospy.loginfo(rospy.get_caller_id() + " I heard %s", data.data)
+    global volt
+    volt = data.data
+    rospy.loginfo("** Battery Volt %s", data.data)
+
+def callback(data):
+    #rospy.loginfo(rospy.get_caller_id() + " I heard %s", data.data)
+    global codigo
+    rospy.loginfo("** IR data %s", bin(data.data))
+
+#Con operaciones AND y moviendo los números binarios hacia la derecha, se obtienen el numero binario de 3 bits para cada sensor:
+    
+    codigo = data.data			#data.data es un binario de 9 bits
+    code = 0b1000000000000 | data.data	#añado un 1 delante para tener siempre el mismo tamaño (ahora 3*4+1=13 bits)
+    #codigo1= codigo>>9			#solo tomo los 3 bits más significativos
+    #codigo2= 0b000111000 & codigo
+    #codigo2= codigo2>>3
+    #codigo3= 0b000000111 & codigo
+
+    #rospy.loginfo(" I heard codigo 1 %s", bin(codigo1))
+    #rospy.loginfo(" I heard codigo 2 %s", bin(codigo2))
+    #rospy.loginfo(" I heard codigo 3 %s", bin(codigo3))
+
+    #global codeL		#para que las variables sean globales y se puedan usar fuera de la función.
+    #global codec
+    #global codeR
+
+    #global codeL = [0,0,0]		#codeR guarda el código recibido por el receptor izquierdo (visto desde el robot). 
+    #global codeC = [0,0,0]		#codeC guarda el código recibido por el receptor central.
+    #global codeR = [0,0,0]		#codeL guarda el código recibido por el receptor derecho.
+
+## Orden Onda emisores: Derecho - Central - Izquierdo
+
+##CODIGO EN EL SKECTH DE ARDUINO:
+	#//Puerto D, que incluye los pines digitales 2, 3, 4 y 5 del Arduino UNO. (B00111100)
+        #                //Receptor IR Derecho           -> pin 2  (B00000100)		"visto desde el robot"
+        #                //Receptor IR Central Derecho   -> pin 3  (B00001000)
+        #                //Receptor IR Central Izquierdo -> pin 4  (B00010000)
+        #                //Receptor IR Izquierdo         -> pin 5  (B00100000)
+
+
+    codeL[0]= bin(code)[3]		#Comienza en la posición 3 porque la 0,1 y 2 son las correspontienes a 0b1 del numero binario recibido, parte que no nos interesa.
+    codeL[1]= bin(code)[7]
+    codeL[2]= bin(code)[11]
+
+    codeLC[0]= bin(code)[4]		
+    codeLC[1]= bin(code)[8]
+    codeLC[2]= bin(code)[12]
+
+    codeRC[0]= bin(code)[5]		
+    codeRC[1]= bin(code)[9]
+    codeRC[2]= bin(code)[13]
+
+    codeR[0]= bin(code)[6]		
+    codeR[1]= bin(code)[10]
+    codeR[2]= bin(code)[14]
+
+    #rospy.loginfo(" I heard from Left Receiver:      %s", codeL)
+    #rospy.loginfo(" I heard from Central Receiver:   %s", codeC)
+    #rospy.loginfo(" I heard from Right Receiver      %s", codeR)
+    
+    #print "I heard from Left Receiver:       %s" % codeL
+    #print "I heard from Central Receiver:    %s" % codeC
+    #print "I heard from Right Receiver       %s" % codeR
+
+
+
+
+
+def listener():
+
+    # In ROS, nodes are uniquely named. If two nodes with the same
+    # node are launched, the previous one is kicked off. The
+    # anonymous=True flag means that rospy will choose a unique
+    # name for our 'talker' node so that multiple talkers can
+    # run simultaneously.
+
+    rospy.init_node('listener', anonymous=True)
+
+    pub1 = rospy.Publisher('ArduinoMotor/speed1', Int32, queue_size=10)
+    pub2 = rospy.Publisher('ArduinoMotor/speed2', Int32, queue_size=10)
+
+    #rospy.Subscriber("chatter", String, callback)
+    rospy.Subscriber("ArduinoIR/codigoIR", Int32, callback)
+    rospy.Subscriber("ArduinoMotor/sensorRFC", Int32, callbackC)
+    rospy.Subscriber("ArduinoMotor/sensorRFR", Int32, callbackR)
+    rospy.Subscriber("ArduinoMotor/sensorRFL", Int32, callbackL)
+
+    rospy.Subscriber("ArduinoMotor/encoder1", Int32, callbackEnc1)
+    rospy.Subscriber("ArduinoMotor/encoder2", Int32, callbackEnc2)
+    rospy.Subscriber("ArduinoMotor/batteryVolt", Int32, callbackVolt)
+
+
+    # spin() simply keeps python from exiting until this node is stopped
+    #rospy.spin()
+
+#def talker():
+#    pub = rospy.Publisher('ArduinoMotor/speed1', Int32, queue_size=10)
+#    rospy.init_node('talker', anonymous=True)
+
+    lost=1
+    recargar=1
+    rate = rospy.Rate(10) # 1->10hz
+    while not rospy.is_shutdown():
+#        hello_str = "hello world %s" % rospy.get_time()
+#        rospy.loginfo(hello_str)
+
+
+	time.sleep(1) #seconds
+
+    	#print "-I heard from Left Receiver:       %s" % codeL[1]
+    	#print "-I heard from Central Receiver:    %s" % codeC[1]
+    	#print "-I heard from Right Receiver       %s" % codeR[1]
+    	print "---Distancia C:       %s" % distanciaC
+    	print "---Distancia R:       %s" % distanciaR
+    	print "---Distancia L:       %s" % distanciaL
+	print "---CODE-----:      %s" % code
+	print "---CODIGO---:	  %s" % bin(codigo)
+	print "---Battery--:      %s" %volt
+	#rospy.loginfo("-----sensorRFC: %s", distanciaC)
+
+
+        #pub1.publish(10)
+        #pub2.publish(-5)
+
+
+	if lost==1:
+		rate = rospy.Rate(10)
+
+		print "			--LOST-- "
+	    	#print "-I heard from Left Receiver:       %s" % codeL[1]
+    		#print "-I heard from Central Receiver:    %s" % codeC[1]
+    		#print "-I heard from Right Receiver       %s" % codeR[1]
+    		#print "---Distancia C:       %s" % distanciaC
+    		#print "---Distancia R:       %s" % distanciaR
+    		#print "---Distancia L:       %s" % distanciaL
+	
+		#rospy.loginfo("-----sensorRFC: %s", distanciaC)
+		
+		if distanciaC < 40 and distanciaR < 40 and distanciaL < 40:
+			x=-3
+			y=1
+    			pub1.publish(x)
+			pub2.publish(y)			
+		elif distanciaC < 20:
+			if distanciaL < distanciaR:
+				x=0
+				y=5
+	    			pub1.publish(x)
+				pub2.publish(y) 
+			else:
+				x=0
+				y=-5
+		    		pub1.publish(x)
+				pub2.publish(y)
+		elif distanciaL < 20:
+			x=0
+			y=5
+	    		pub1.publish(x)
+			pub2.publish(y)
+
+		elif distanciaL < 40:
+			x=5
+			y=3
+	    		pub1.publish(x)
+			pub2.publish(y)
+		elif distanciaR < 20:
+			x=0
+			y=-5
+	    		pub1.publish(x)
+			pub2.publish(y)
+		elif distanciaR < 40:
+			x=5
+			y=-3
+	    		pub1.publish(x)
+			pub2.publish(y)
+		else:
+			x=25
+			y=0
+	    		pub1.publish(x)
+			pub2.publish(y)
+		rate.sleep()
+		
+		if codigo != 4096 and recargar == 1:  # if codigo !=0, 1000000000000  =? 4096
+			lost=0
+			giro=0
+			girando=0
+			
+
+	    	print "------Speed x:       %s" % x
+	    	print "------Speed y:       %s" % y	
+			
+	if lost==0:
+
+		print "			-- Localized --"
+		rate = rospy.Rate(10)
+	
+		if distanciaC < 15 or distanciaR < 15 or distanciaL < 15:
+			x=0
+			y=0
+    			pub1.publish(x)
+			pub2.publish(y)
+			#rate = rospy.Rate(20)
+			#rate.sleep()
+		#elseif codeR[1] =='0' and codeL[1]=='0':
+		#	x=0
+		#	y=30
+    		#	pub1.publish(x)
+		#	pub2.publish(y)
+		
+
+		elif codeRC[0] == '1' and codeLC[2]=='0':   
+			girando=0
+			giro=1 	
+			if codeRC[1]=='1' or codeLC[1]=='1':	#Si se encuentra en la región cercana a la base		
+				lost=2
+			else:
+				x=15
+				y=5
+				#rate = rospy.Rate(1)	
+    			pub1.publish(x)
+			pub2.publish(y)
+			#rate.sleep()
+		
+		elif codeRC[0] == '0' and codeLC[2]=='1':
+			girando=0
+			giro=2
+			if codeRC[1]=='1' or codeLC[1]=='1':	#Si se encuentra en la región cercana a la base		
+				lost=2
+			else:
+				x=15
+				y=-5
+				#rate = rospy.Rate(1)
+    			pub1.publish(x)
+			pub2.publish(y)
+			#rate.sleep()
+		elif codeRC[0] == '1' and codeLC[2]=='1':
+			girando=0
+			giro=0
+			if codeRC[1]=='1' or codeLC[1]=='1':	#Si se encuentra en la región cercana a la base		
+				lost=2
+			else:
+				x=10
+				y=0		 
+				#rate = rospy.Rate(1)	
+    			pub1.publish(x)
+			pub2.publish(y)
+			#rate.sleep()
+
+		elif codeR[0] == '1' and codeR[2]=='1':   	## zona central detectada por el sensor derecho		
+			girando=1
+			encoder_inicio= encoder1
+			x=0
+			y=5
+    			pub1.publish(x)
+			pub2.publish(y)
+		
+		elif codeL[0] == '1' and codeL[2]=='1':   	##zona central detectada por el sensor izquierdo
+			girando=1
+			encoder_inicio = encoder1
+			x=0
+			y=-5
+    			pub1.publish(x)
+			pub2.publish(y)
+		
+		#elif codeL[1] == '1':   			##zona izquierda detectada por el sensor derecho
+		#	girando=0
+		#	x=10
+		#	y=3
+    		#	pub1.publish(x)
+		#	pub2.publish(y)
+
+
+		elif codeR[2] == '1':				# sensor derecho recibe de sólo un emisor   			
+			#girando=1
+			#encoder_inicio= encoder1
+			x=10
+			y=3
+    			pub1.publish(x)
+			pub2.publish(y)
+		
+		elif codeL[0] == '1':			   	# sensor izquierdo recibe de sólo un emisor
+			#girando=1
+			#encoder_inicio = encoder1
+			x=10
+			y=-3
+    			pub1.publish(x)
+			pub2.publish(y)
+
+		#else:						#cualquier otro caso (en zona lejana)
+		 	
+		#	if giro == 1:
+		#		x=2
+		#		y=1
+		#	elif giro == 2:
+		#		x=2
+		#		y=-1
+		#	else:
+		#		x=3
+		#		y=0
+		#
+		#	x=4
+		#	y=0
+    		#	pub1.publish(x)
+		#	pub2.publish(y)
+			#rate = rospy.Rate(10)
+			#rate.sleep()		
+		rate.sleep()
+		if codigo==4096 and girando==0:
+			lost=1
+		if codigo==4096 and girando==1 and (abs(encoder_inicio-encoder1) > 550):	#Esto evita entrar en un bucle en el caso de que se reciba una señal por uno de los lados, se ponga a girar y no vuelva a recibir ninguna señal que haga que salga de ese estado.
+			lost=1
+
+	    	print "------Speed x:       %s" % x
+	    	print "------Speed y:       %s" % y	
+		
+		tension = volt
+	
+	if lost == 2:# and volt <= 111:	#Si se encuentra justo en la zona central de frente, y detecta la señal del led de la región cercana
+
+		print "			-- 				Localized ZONA CERCANA CENTRAL--"
+		rate = rospy.Rate(10)
+
+
+		#if volt > 115:	
+		#	lost=3
+		
+		#if distanciaC < 5 or distanciaR < 10 or distanciaL < 10:
+		#	x=0
+		#	y=0
+    		#	pub1.publish(x)
+		#	pub2.publish(y)
+
+		if codeRC[0] == '1' and codeLC[0] == '1':   
+			girando=0
+			giro=1 		
+			x=6 #6 Funciona #7	#2	#3	#10
+			y=0 #0	#1	#3
+    			pub1.publish(x)
+			pub2.publish(y)
+
+		elif codeRC[0] == '1':   
+			girando=0
+			giro=1 		
+			x=6 #6 Funciona #7	#2	#3	#10
+			y=3 #3 		#3	#1	#3
+    			pub1.publish(x)
+			pub2.publish(y)
+		elif codeLC[0] == '1':   
+			girando=0
+			giro=1 		
+			x=6 #6 Funciona #7	#2	#3	#10
+			y=-3 #3 	#3	#1	#3
+    			pub1.publish(x)
+			pub2.publish(y)
+
+		if volt > (tension + 2):	
+			lost=3
+			tiempo_recarga=0
+		else:
+			rate.sleep()        	
+	
+	#if volt > 117:
+	#	lost=3
+
+	
+	if lost == 3:					#si la tensión "volt" es mayor que 115
+
+		rate = rospy.Rate(10)
+		
+		print "			-- 				                                RECARGA!!--"
+		x=0
+		y=0
+    		pub1.publish(x)
+		pub2.publish(y)
+		rate.sleep()
+		time.sleep(10) #seconds
+
+
+		tiempo_recarga += 1
+		
+		if recargar == 0 or tiempo_recarga >= 2:
+			
+			print "			-- 				                         DESCONEXIÓN!!--"
+			x=-10				#Movimiento hacia atrás de desconexión
+			y=0
+    			pub1.publish(x)
+			pub2.publish(y)
+			rate.sleep()
+			time.sleep(4) #seconds
+
+
+			x=0				#Giro sobre sí mismo para seguir su camino
+			y=10
+    			pub1.publish(x)
+			pub2.publish(y)
+			rate.sleep()
+			time.sleep(5) #seconds
+			
+			lost=1				#Vuelve al estado inicial
+			recargar = 0
+			
+
+
+    rospy.spin()
+
+
+if __name__ == '__main__':
+    listener()
+
