@@ -1,0 +1,16 @@
+<launch>
+
+  <group ns="ArduinoMotor">
+    <node pkg="rosserial_python" name="serial" type="serial_node.py" args="/dev/ttyACM0
+"/>
+  </group>
+
+  <group ns="ArduinoIR">
+    <node pkg="rosserial_python" name="serial" type="serial_node.py" args="/dev/ttyUSB0
+"/>
+  </group>
+
+<node name="listener1" pkg="pack1" type="listener.py" output="screen" />
+
+
+</launch>
